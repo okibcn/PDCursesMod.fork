@@ -219,7 +219,7 @@ init:
   # Setup TOOLCHAIN for Visual Studio build tools
   - if not DEFINED TOOLCHAIN (
       if "%APPVEYOR_BUILD_WORKER_IMAGE%" == "Visual Studio 2013" (
-        # one "ancient" environment for testing
+        rem one "ancient" environment for testing
         set "TOOLCHAIN=VS2008"
       ) else if "%APPVEYOR_BUILD_WORKER_IMAGE%" == "Visual Studio 2015" (
         set "TOOLCHAIN=VS2015"
