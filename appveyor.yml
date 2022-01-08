@@ -216,10 +216,9 @@ init:
   - echo BUILD_NUMBER=%APPVEYOR_BUILD_NUMBER%
   # curl defaults --keepalive-time 60 --max-time ?? about 10 minutes --connect-timeout ??
   - set CURL_ARGS=--location --fail --show-error --keepalive-time 10 --connect-timeout 10 --max-time 60
-  # Setup TOOLCHAIN for Visual Studio build tools
+  # Setup TOOLCHAIN for Visual Studio build tools, VS2013 as "ancient" test using VC2008 Express
   - if not DEFINED TOOLCHAIN (
       if "%APPVEYOR_BUILD_WORKER_IMAGE%" == "Visual Studio 2013" (
-        rem one "ancient" environment for testing
         set "TOOLCHAIN=VS2008"
       ) else if "%APPVEYOR_BUILD_WORKER_IMAGE%" == "Visual Studio 2015" (
         set "TOOLCHAIN=VS2015"
