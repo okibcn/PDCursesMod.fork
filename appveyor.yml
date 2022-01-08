@@ -256,6 +256,7 @@ init:
       set "VCVARSALL=%ProgramFiles(x86)%\Microsoft Visual Studio 14.0\VC\vcvarsall.bat"
     ) else if "%TOOLCHAIN:~0,4%"=="VS20" (
       set "VCVARSALL=%ProgramFiles(x86)%\Microsoft Visual Studio\%TOOLCHAIN:~2,4%\Community\VC\Auxiliary\Build\vcvarsall.bat"
+    )
   # Setup Archive name
   - set "ARCHIVE=%TOOLCHAIN%_%CONFIGURATION%_%ARCHIVE_BASENAME%_%APPVEYOR_BUILD_NUMBER%"
 
