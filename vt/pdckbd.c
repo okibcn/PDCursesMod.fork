@@ -41,12 +41,22 @@ static bool check_key( int *c)
     const int STDIN = 0;
     struct timeval timeout;
     fd_set rdset;
+    extern int PDC_n_ctrl_c;
 
     if( PDC_resize_occurred)
        return( TRUE);
 #ifdef LINUX_FRAMEBUFFER_PORT
     PDC_check_for_blinking( );
 #endif
+    if( PDC_n_ctrl_c)
+       {
+       if( c)
+          {
+          PDC_n_ctrl_c--;
+          *c = 3;
+          }
+       return( TRUE);
+       }
     FD_ZERO( &rdset);
     FD_SET( STDIN, &rdset);
     timeout.tv_sec = 0;
@@ -72,8 +82,12 @@ static bool check_key( int *c)
     return( rval);
 }
 
+static MOUSE_STATUS _cached_mouse_status;
+
 bool PDC_check_key( void)
 {
+   if( _cached_mouse_status.changes)
+      return( TRUE);
    return( check_key( NULL));
 }
 
@@ -81,6 +95,7 @@ void PDC_flushinp( void)
 {
    int thrown_away_char;
 
+   _cached_mouse_status.changes = 0;
    while( check_key( &thrown_away_char))
       ;
 }
@@ -258,6 +273,26 @@ static int xlate_vt_codes( const int *c, const int count, int *modifiers)
              { KEY_F(3),   0,        "[[C"     },
              { KEY_F(4),   0,        "[[D"     },
              { KEY_F(5),   0,        "[[E"     },
+             { KEY_F(25),  CTL,      "[1;5P"   },   /* ctrl-f1 */
+             { KEY_F(26),  CTL,      "[1;5Q"   },   /* ctrl-f2 */
+             { KEY_F(27),  CTL,      "[1;5R"   },   /* ctrl-f3 */
+             { KEY_F(28),  CTL,      "[1;5S"   },   /* ctrl-f4 */
+             { KEY_F(29),  CTL,      "[15;5~"  },   /* ctrl-f5 */
+             { KEY_F(30),  CTL,      "[17;5~"  },   /* ctrl-f6 */
+             { KEY_F(31),  CTL,      "[18;5~"  },   /* ctrl-f7 */
+             { KEY_F(32),  CTL,      "[19;5~"  },   /* ctrl-f8 */
+             { KEY_F(33),  CTL,      "[20;5~"  },   /* ctrl-f9 */
+             { KEY_F(34),  CTL,      "[21;5~"  },   /* ctrl-f10 */
+             { KEY_F(35),  CTL,      "[23;5~"  },   /* ctrl-f11 */
+             { KEY_F(36),  CTL,      "[24;5~"  },   /* ctrl-f12 */
+             { KEY_SEND,   SHF,      "[1;2F"   },   /* shift-end */
+             { KEY_SHOME,  SHF,      "[1;2H"   },   /* shift-home */
+             { KEY_SPREVIOUS, SHF,   "[5;2~"   },   /* shift-pgup */
+             { KEY_SNEXT,  SHF,      "[6;2~"   },   /* shift-pgdn */
+             { KEY_SIC,    SHF,      "[2;2~"   },   /* shift-ins */
+             { KEY_SDC,    SHF,      "[3;2~"   },   /* shift-del */
+             { CTL_INS,    CTL,      "[2;5~"   },   /* ctrl-ins */
+             { CTL_DEL,    CTL,      "[3;5~"   },   /* ctrl-del */
              };
    const size_t n_keycodes = sizeof( xlates) / sizeof( xlates[0]);
    size_t i;
@@ -268,6 +303,16 @@ static int xlate_vt_codes( const int *c, const int count, int *modifiers)
       {
       if( c[0] >= 'a' && c[0] <= 'z')
          rval = ALT_A + c[0] - 'a';
+      else if( c[0] >= 'A' && c[0] <= 'Z')
+         {
+         rval = ALT_A + c[0] - 'A';
+         *modifiers = SHF;
+         }
+      else if( c[0] >= 1 && c[0] <= 26)
+         {
+         rval = ALT_A + c[0];
+         *modifiers = CTL;
+         }
       else if( c[0] >= '0' && c[0] <= '9')
          rval = ALT_0 + c[0] - '0';
       else
@@ -281,8 +326,13 @@ static int xlate_vt_codes( const int *c, const int count, int *modifiers)
 
          if( tptr)
              rval = codes[tptr - text];
+         else
+            {
+            rval = c[0];
+            *modifiers = SHF;
+            }
          }
-      *modifiers = ALT;
+      *modifiers |= ALT;
       }
    else if( count == 5 && c[0] == '[' && c[1] == 'M')
       rval = KEY_MOUSE;
@@ -309,11 +359,18 @@ static int xlate_vt_codes( const int *c, const int count, int *modifiers)
 int PDC_get_key( void)
 {
    int rval = -1;
+   static bool recursed = FALSE;
 
    if( PDC_resize_occurred)
       {
       PDC_resize_occurred = FALSE;
       return( KEY_RESIZE);
+      }
+   if( !recursed && _cached_mouse_status.changes)
+      {
+      SP->mouse_status = _cached_mouse_status;
+      _cached_mouse_status.changes = 0;
+      return( KEY_MOUSE);
       }
    if( check_key( &rval))
       {
@@ -340,7 +397,7 @@ int PDC_get_key( void)
             {
             count++;
             rval = xlate_vt_codes( c, count, &modifiers);
-            if( rval == ALT_LBRACKET && check_key( NULL))
+            if( (rval == ALT_LBRACKET || rval == ALT_O) && check_key( NULL))
                rval = -1;
             }
 #ifdef LINUX_FRAMEBUFFER_PORT
@@ -386,6 +443,7 @@ int PDC_get_key( void)
                                                     &x, &y, &n_bytes);
                assert( n_fields == 3);
                assert( c[count] == 'M' || c[count] == 'm');
+               assert( n_bytes == count - 2);
                release = (c[count] == 'm');
                button = idx & 3;
                if( idx & 0x40)            /* (SGR) wheel mouse event; */
@@ -433,30 +491,42 @@ int PDC_get_key( void)
                         (button ? PDC_MOUSE_WHEEL_DOWN : PDC_MOUSE_WHEEL_UP);
                else     /* "normal" mouse button */
                   SP->mouse_status.changes = (1 << button);
-               if( !release && !(idx & 64))   /* wait for a possible release */
-                  {
+               if( !release && !(idx & 0x40) && !recursed)   /* wait for possible */
+                  {                                       /* release, click, etc. */
                   int n_events = 0;
+                  const MOUSE_STATUS stored = SP->mouse_status;
+                  bool keep_going = TRUE;
 
-                  while( n_events < 6)
+                  recursed = TRUE;
+                  while( keep_going && n_events < 5)
                      {
                      PDC_napms( SP->mouse_wait);
-                     if( check_key( c))
-                        {
-                        count = 0;
-                        while( count < MAX_COUNT && check_key( &c[count]))
-                           count++;
-                        n_events++;
-                        }
-                     else
-                        break;
+                     keep_going = FALSE;
+                     while( check_key( NULL) && n_events < 5)
+                        if( PDC_get_key( ) == KEY_MOUSE)
+                           {
+                           if( SP->mouse_status.x == x && SP->mouse_status.y == y
+                                   && ((SP->mouse_status.changes >> button) & 1))
+                              {
+                              keep_going = TRUE;
+                              n_events++;
+                              }
+                           else     /* some other mouse event;  store and report */
+                              {     /* next time we're asked for a key/mouse event */
+                              keep_going = FALSE;
+                              _cached_mouse_status = SP->mouse_status;
+                              }
+                           }
                      }
+                  SP->mouse_status = stored;
+                  recursed = FALSE;
                   if( !n_events)   /* just a click,  no release(s) */
                      held ^= (1 << button);
-                  else if( n_events == 1)
+                  else if( n_events < 3)
                       SP->mouse_status.button[button] = BUTTON_CLICKED;
-                  else if( n_events <= 3)
+                  else if( n_events < 5)
                       SP->mouse_status.button[button] = BUTTON_DOUBLE_CLICKED;
-                  else if( n_events <= 5)
+                  else
                       SP->mouse_status.button[button] = BUTTON_TRIPLE_CLICKED;
                   }
                }
@@ -468,21 +538,33 @@ int PDC_get_key( void)
          }
       else if( (rval & 0xc0) == 0xc0)      /* start of UTF-8 */
          {
-         check_key( &c[0]);
+         if( !check_key( &c[0]))    /* we should get at least one */
+            {                       /* continuation byte    */
+            assert( 0);
+            return( -1);
+            }
          assert( (c[0] & 0xc0) == 0x80);
          c[0] &= 0x3f;
          if( !(rval & 0x20))      /* two-byte : U+0080 to U+07ff */
             rval = c[0] | ((rval & 0x1f) << 6);
          else
             {
-            check_key( &c[1]);
+            if( !check_key( &c[1]))   /* in this situation,  we should get */
+               {                     /* at least one more continuation byte */
+               assert( 0);
+               return( -1);
+               }
             assert( (c[1] & 0xc0) == 0x80);
             c[1] &= 0x3f;
             if( !(rval & 0x10))   /* three-byte : U+0800 - U+ffff */
                rval = (c[1] | (c[0] << 6) | ((rval & 0xf) << 12));
             else              /* four-byte : U+FFFF - U+10FFFF : SMP */
                {              /* (Supplemental Multilingual Plane) */
-               check_key( &c[2]);
+               if( !check_key( &c[2]))
+                  {
+                  assert( 0);
+                  return( -1);
+                  }
                assert( (c[2] & 0xc0) == 0x80);
 #if WCHAR_MAX > 65535
                c[2] &= 0x3f;
@@ -560,12 +642,20 @@ int PDC_mouse_set( void)
 
          if( curr_tracking_state > 0)
             {
+#ifdef HAVE_SNPRINTF
             snprintf( tbuff, sizeof( tbuff), "\033[?%dl", curr_tracking_state);
+#else
+            sprintf( tbuff, "\033[?%dl", curr_tracking_state);
+#endif
             PDC_puts_to_stdout( tbuff);
             }
          if( tracking_state)
             {
+#ifdef HAVE_SNPRINTF
             snprintf( tbuff, sizeof( tbuff), "\033[?%dh", tracking_state);
+#else
+            sprintf( tbuff, "\033[?%dh", tracking_state);
+#endif
             PDC_puts_to_stdout( tbuff);
             }
          curr_tracking_state = tracking_state;

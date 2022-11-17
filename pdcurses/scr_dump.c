@@ -1,6 +1,7 @@
 /* PDCurses */
 
 #include <curspriv.h>
+#include <assert.h>
 
 /*man-start**************************************************************
 
@@ -60,80 +61,170 @@ scr_dump
 #include <stdlib.h>
 #include <string.h>
 
-#define DUMPVER 1   /* Should be updated whenever the WINDOW struct is
+#define DUMPVER 2   /* Should be updated whenever the WINDOW struct is
                        changed */
+
+static void _stuff_chtype_into_eight_bytes( char *buff, const chtype c)
+{
+   const chtype text = c & A_CHARTEXT;
+   const chtype color_pair = PAIR_NUMBER( c);
+   const chtype attribs = (c >> PDC_CHARTEXT_BITS) & (((chtype)1 << PDC_ATTRIBUTE_BITS) - 1);
+   const uint32_t x = (uint32_t)text | ((uint32_t)attribs << 21);
+   const uint32_t y = ((uint32_t)attribs >> 11) | ((uint32_t)color_pair << 1);
+
+   memcpy( buff, &x, 4);
+   memcpy( buff + 4, &y, 4);
+         /* Should reverse these eight bytes on big-Endian machines */
+}
+
+static chtype _get_chtype_from_eight_bytes( const char *buff)
+{
+   uint32_t x, y;
+   chtype c, text, color_pair, attribs;
+
+         /* Should reverse these eight bytes on big-Endian machines */
+   memcpy( &x, buff, 4);
+   memcpy( &y, buff + 4, 4);
+   text = (chtype)x & A_CHARTEXT;
+   attribs = (chtype)( ((x >> 21) & 0xfff) | ((y & 1) << 11));
+   color_pair = (chtype)(y >> 1) & 0xfffff;
+   c = text | (attribs << PDC_CHARTEXT_BITS) | COLOR_PAIR( color_pair);
+   return( (chtype)c);
+}
+
+/* In PDCursesMod 4.3.3 and earlier,  the on-disk representation of a
+window was entirely binary.  A WINDOW struct was written out,  and the
+window's chtype data was written out.  Portability of these files was
+nearly zero.  Alignment and structure packing differences, differences
+in the sizes of ints,  bools,  and pointers,  32-bit vs. 64-bit
+chtypes and endianness would usually ensure that a file written by one
+program couldn't be read by another.
+
+Adding grief to this is the fact that the window structure changed in
+4.3.1.  Files written with 4.3.0 and earlier could not be read in
+4.3.1 and later.
+
+The window structure is now written out in ASCII,  which should help
+with cross-compiler and cross-OS compatibility.  chtypes are expanded
+to the 64-bit form on writing and compacted back upon reading.  You
+will get scrambled colors and/or attributes if you make a file with
+one program that uses attributes or color pairs beyond the reach of
+the program reading the file.  Error checks for this may be added. */
+
+static const char *_format_nine_ints = "%d %d %d %d %d %d %d %d %d\n";
+static const char *_format_three_ints = "%d %d %d\n";
 
 int putwin(WINDOW *win, FILE *filep)
 {
-    static const char *marker = "PDC";
-    static const unsigned char version = DUMPVER;
+    char buff[16];
+    int y, x;
 
     PDC_LOG(("putwin() - called\n"));
 
+    assert( filep);
     /* write the marker and the WINDOW struct */
 
-    if (filep && fwrite(marker, strlen(marker), 1, filep)
-              && fwrite(&version, 1, 1, filep)
-              && fwrite(win, sizeof(WINDOW), 1, filep))
-    {
-        int i;
+    if( !filep || !fprintf( filep, "%s\n", curses_version( )))
+        return( ERR);
 
-        /* write each line */
+    if( !fprintf( filep, _format_nine_ints,
+         DUMPVER, (int)sizeof( WINDOW), win->_cury, win->_curx,
+         win->_maxy, win->_maxx, win->_begy, win->_begx, win->_flags))
+        return( ERR);
 
-        for (i = 0; i < win->_maxy && win->_y[i]; i++)
-            if (!fwrite(win->_y[i], win->_maxx * sizeof(chtype), 1, filep))
+    if( !fprintf( filep, _format_nine_ints,
+         win->_clear, win->_leaveit, win->_scroll, win->_nodelay,
+         win->_immed, win->_sync, win->_use_keypad, win->_tmarg, win->_bmarg))
+        return( ERR);
+
+    if( !fprintf( filep, _format_three_ints,
+         win->_delayms, win->_parx, win->_pary))
+        return( ERR);
+
+    _stuff_chtype_into_eight_bytes( buff, win->_attrs);
+    _stuff_chtype_into_eight_bytes( buff + 8, win->_bkgd);
+    if( !fwrite(buff, 16, 1, filep))
+        return ERR;
+
+    for( y = 0; y < win->_maxy && win->_y[y]; y++)
+        for( x = 0; x < win->_maxx; x++)
+        {
+            _stuff_chtype_into_eight_bytes( buff, win->_y[y][x]);
+            if( !fwrite(buff, 8, 1, filep))
                 return ERR;
-
-        return OK;
-    }
-
-    return ERR;
+         }
+    return OK;
 }
+
+void PDC_add_window_to_list( WINDOW *win);
+
+#ifdef _MSC_VER
+   #pragma warning( disable: 4701)  /* suppress spurious warnings */
+#endif                         /* about 'uninitialised' variables */
 
 WINDOW *getwin(FILE *filep)
 {
-    WINDOW *win;
-    char marker[4];
-    int i, nlines, ncols;
+    WINDOW *win, temp_win;
+    char buff[80];
+    int nlines, y;
+    int _clear, _leaveit, _scroll, _nodelay, _immed, _sync, _use_keypad;
+    int version, window_size;
+    bool failure = FALSE;
 
     PDC_LOG(("getwin() - called\n"));
 
-    win = malloc(sizeof(WINDOW));
+    assert( filep);
+    memset( &temp_win, 0, sizeof( WINDOW));
+
+    if (!filep || !fgets( buff, sizeof( buff), filep)
+                 || strncmp( buff, curses_version( ), 14))
+        failure = TRUE;
+    else if( !fgets( buff, sizeof( buff), filep)
+         || 9 != sscanf( buff, _format_nine_ints, &version, &window_size,
+                  &temp_win._cury, &temp_win._curx, &temp_win._maxy, &temp_win._maxx,
+                  &temp_win._begy, &temp_win._begx, &temp_win._flags)
+               || version != DUMPVER)
+        failure = TRUE;
+    else if( !fgets( buff, sizeof( buff), filep)
+         || 9 != sscanf( buff, _format_nine_ints, &_clear, &_leaveit,
+                     &_scroll, &_nodelay, &_immed, &_sync, &_use_keypad,
+                     &temp_win._tmarg, &temp_win._bmarg))
+        failure = TRUE;
+    else if( !fgets( buff, sizeof( buff), filep)
+         || 3 != sscanf( buff, _format_three_ints, &temp_win._delayms,
+                        &temp_win._parx, &temp_win._pary))
+        failure = TRUE;
+    else if( !fread( buff, 16, 1, filep))
+        failure = TRUE;
+
+    if( failure)
+        return (WINDOW *)NULL;
+
+    win = PDC_makenew( temp_win._maxy, temp_win._maxx, temp_win._begy, temp_win._begx);
     if (!win)
         return (WINDOW *)NULL;
-
-    /* check for the marker, and load the WINDOW struct */
-
-    if (!filep || !fread(marker, 4, 1, filep) || strncmp(marker, "PDC", 3)
-        || marker[3] != DUMPVER || !fread(win, sizeof(WINDOW), 1, filep))
+    else
     {
-        free(win);
-        return (WINDOW *)NULL;
+        chtype **saved_y = win->_y;
+        int *saved_firstch = win->_firstch;
+        int *saved_lastch = win->_lastch;
+
+        memcpy( win, &temp_win, sizeof( WINDOW));
+        win->_y = saved_y;
+        win->_firstch = saved_firstch;
+        win->_lastch  = saved_lastch;
     }
+    win->_attrs = _get_chtype_from_eight_bytes( buff);
+    win->_bkgd = _get_chtype_from_eight_bytes( buff + 8);
+    win->_clear      = (bool)_clear;
+    win->_leaveit    = (bool)_leaveit;
+    win->_scroll     = (bool)_scroll;
+    win->_nodelay    = (bool)_nodelay;
+    win->_immed      = (bool)_immed;
+    win->_sync       = (bool)_sync;
+    win->_use_keypad = (bool)_use_keypad;
 
     nlines = win->_maxy;
-    ncols = win->_maxx;
-
-    /* allocate the line pointer array */
-
-    win->_y = malloc(nlines * sizeof(chtype *));
-    if (!win->_y)
-    {
-        free(win);
-        return (WINDOW *)NULL;
-    }
-
-    /* allocate the minchng and maxchng arrays */
-
-    win->_firstch = malloc(nlines * sizeof(int) * 2);
-    if (!win->_firstch)
-    {
-        free(win->_y);
-        free(win);
-        return (WINDOW *)NULL;
-    }
-
-    win->_lastch = win->_firstch + nlines;
 
     /* allocate the lines */
 
@@ -143,19 +234,35 @@ WINDOW *getwin(FILE *filep)
 
     /* read them */
 
-    for (i = 0; i < nlines; i++)
+    for( y = 0; y < nlines && !failure; y++)
     {
-        if (!fread(win->_y[i], ncols * sizeof(chtype), 1, filep))
+        const int ncols = win->_maxx;
+        int x;
+
+        for( x = 0; x < ncols && !failure; x++)
         {
-            delwin(win);
-            return (WINDOW *)NULL;
+            if (!fread( buff, 8, 1, filep))
+                failure = TRUE;
+            else
+                win->_y[y][x] = _get_chtype_from_eight_bytes( buff);
         }
     }
 
+    if( failure)
+    {
+        delwin(win);
+        return (WINDOW *)NULL;
+    }
+
     touchwin(win);
+    PDC_add_window_to_list( win);
 
     return win;
 }
+
+#ifdef _MSC_VER
+   #pragma warning( default: 4701)
+#endif
 
 int scr_dump(const char *filename)
 {

@@ -109,6 +109,7 @@ COMMAND command[MAX_OPTIONS] =
 
 int width, height;
 static bool report_mouse_movement = FALSE;
+static SCREEN *screen_pointer;
 
 int main(int argc, char *argv[])
 {
@@ -246,10 +247,8 @@ int main(int argc, char *argv[])
 
     delwin(win);
     endwin();
-#ifdef PDCURSES
-    delscreen( SP);
-#endif
-
+                            /* Not really needed,  but ensures Valgrind  */
+    delscreen( screen_pointer);          /* says all memory was freed */
     return 0;
 }
 
@@ -275,10 +274,11 @@ int initTest(WINDOW **win, int argc, char *argv[])
 {
 #ifdef XCURSES
     Xinitscr(argc, argv);
+    screen_pointer = SP;
 #else
     INTENTIONALLY_UNUSED_PARAMETER( argv);
     INTENTIONALLY_UNUSED_PARAMETER( argc);
-    initscr();
+    screen_pointer = newterm(NULL, stdout, stdin);
 #endif
 #ifdef A_COLOR
     if (has_colors())
@@ -959,6 +959,12 @@ void curTest(void)
         int c = getch();
 
 #if defined (PDCURSES) || defined (NCURSES_VERSION)
+#ifdef __linux
+        const char *screen_dump_filename = "/tmp/screen.xyz";
+#else
+        const char *screen_dump_filename = "screen.xyz";
+#endif
+
         if (c == KEY_UP)
             move(getcury(stdscr) - 1, getcurx(stdscr));
         else if (c == KEY_DOWN)
@@ -967,10 +973,20 @@ void curTest(void)
             move(getcury(stdscr), getcurx(stdscr) - 1);
         else if (c == KEY_RIGHT)
             move(getcury(stdscr), getcurx(stdscr) + 1);
-#ifdef PDCURSES
-        else if (c == 'i')
-            curs_set(SP->visibility == 1 ? 2 : 1);
-#endif
+        else if (c == 'i')              /* cycle cursor visibility from */
+        {                 /* 1 = low to 2 = high to 0 =off to low again */
+            const int curr_visibility = curs_set( 1);
+
+            if( curr_visibility == 1 || curr_visibility == 2)
+               curs_set( (curr_visibility + 1) % 3);
+        }
+        else if( c == 's')
+            scr_dump( screen_dump_filename);
+        else if( c == 'r')
+        {
+            scr_restore( screen_dump_filename);
+            refresh( );
+        }
         else
 #endif
             break;
@@ -1243,7 +1259,7 @@ void acsTest(WINDOW *win)
         printw( "sizeof( chtype) = %d; sizeof( mmask_t) = %d",
                            (int)sizeof( chtype), (int)sizeof( mmask_t));
         mvaddstr(tmarg + n_rows * 2 + 2, 3, "Press any key to continue");
-        getch();
+        curTest( );
         clear( );
     }
 
@@ -1291,7 +1307,7 @@ void acsTest(WINDOW *win)
 #endif            /* U+1D11E = musical symbol G clef */
 
         mvaddstr(tmarg + 2, 3, "Press any key to continue");
-        getch();
+        curTest( );
         clear( );
     }
 #endif
@@ -1340,41 +1356,23 @@ void attrTest(WINDOW *win)
     mvaddstr(tmarg + 13, col1, "A_UNDERLINE");
     attrset(A_NORMAL);
 
-#ifdef A_STRIKEOUT
-    if( A_STRIKEOUT)
-    {
-        attrset(A_STRIKEOUT);
-        mvaddstr(tmarg + 15, col1, "A_STRIKEOUT");
-        attrset(A_NORMAL);
-    }
+#if PDC_COLOR_BITS >= 11
+    attrset(A_STRIKEOUT);
+    mvaddstr(tmarg + 15, col1, "A_STRIKEOUT");
+    attrset(A_NORMAL);
+
+    attrset(A_OVERLINE);
+    mvaddstr(tmarg + 15, col2, "A_OVERLINE");
+    attrset(A_NORMAL);
+
+    attrset(A_DIM);
+    mvaddstr(tmarg + 17, col2, "A_DIM");
+    attrset(A_NORMAL);
 #endif
 
-#ifdef A_OVERLINE
-    if( A_OVERLINE)
-    {
-        attrset(A_OVERLINE);
-        mvaddstr(tmarg + 15, col2, "A_OVERLINE");
-        attrset(A_NORMAL);
-    }
-#endif
-
-#ifdef A_ITALIC
-    if( A_ITALIC)
-    {
-        attrset(A_ITALIC|A_UNDERLINE);
-        mvaddstr(tmarg + 3, col2, "Underlined Italic");
-        attrset(A_NORMAL);
-    }
-#endif
-
-#ifdef A_DIM
-    if( A_DIM)
-    {
-        attrset(A_DIM);
-        mvaddstr(tmarg + 17, col2, "A_DIM");
-        attrset(A_NORMAL);
-    }
-#endif
+    attrset(A_ITALIC|A_UNDERLINE);
+    mvaddstr(tmarg + 3, col2, "Underlined Italic");
+    attrset(A_NORMAL);
 
     attrset(A_BOLD|A_UNDERLINE);
     mvaddstr(tmarg + 5, col2, "Underlined Bold");
@@ -1529,7 +1527,7 @@ static void supergradient(int tmarg)
     mvaddstr( LINES - 1, 1, "Green");
 
     mvaddstr(tmarg + 19, 3, "Press any key to continue");
-    getch();
+    curTest( );
 }
 #endif
 
@@ -1742,7 +1740,8 @@ void display_menu(int old_option, int new_option)
         int i;
 
         attrset(A_BOLD);
-        mvaddstr(tmarg - 3, lmarg - 5, "PDCurses Test Program");
+        mvprintw( tmarg - 3, (COLS - strlen( longname( ))) / 2 - 6,
+                            "%s Test Program", longname( ));
         attrset(A_NORMAL);
 
         for (i = 0; i < MAX_OPTIONS; i++)

@@ -62,10 +62,9 @@ initscr
    and X11 allow user resizing, while DOS, OS/2, SDL and Windows console
    allow programmatic resizing. If you want to support user resizing,
    you should check for getch() returning KEY_RESIZE, and/or call
-   is_termresized() at appropriate times; if either condition occurs,
-   call resize_term(0, 0). Then, with either user or programmatic
-   resizing, you'll have to resize any windows you've created, as
-   appropriate; resize_term() only handles stdscr and curscr.
+   is_termresized() at appropriate times.   Then, with either user or
+   programmatic resizing, you'll have to resize any windows you've
+   created, as appropriate; resize_term() only handles stdscr and curscr.
 
    is_termresized() returns TRUE if the curses screen has been resized
    by the user, and a call to resize_term() is needed. Checking for
@@ -131,7 +130,7 @@ char ttytype[128];
    #define PDC_VER_MONTH_STR "!!!"
 #endif
 
-const char *_curses_notice = "PDCurses " PDC_VERDOT " - "\
+const char *_curses_notice = "PDCursesMod " PDC_VERDOT " - "\
                     PDC_stringize( PDC_VER_YEAR) "-" \
                     PDC_VER_MONTH_STR "-" \
                     PDC_stringize( PDC_VER_DAY);
@@ -193,6 +192,9 @@ WINDOW *initscr(void)
 
     LINES = SP->lines = PDC_get_rows();
     COLS = SP->cols = PDC_get_columns();
+
+    if( PDC_init_atrtab())   /* set up default colors */
+        return NULL;
 
     if (LINES < 2 || COLS < 2)
     {
@@ -259,8 +261,6 @@ WINDOW *initscr(void)
     else
         curscr->_clear = TRUE;
 
-    if( PDC_init_atrtab())   /* set up default colors */
-        return NULL;
 
     MOUSE_X_POS = MOUSE_Y_POS = -1;
     BUTTON_STATUS(1) = BUTTON_RELEASED;
@@ -272,7 +272,7 @@ WINDOW *initscr(void)
 
     def_shell_mode();
 
-    sprintf(ttytype, "pdcurses|PDCurses for %s", PDC_sysname());
+    longname( );
 
     SP->c_buffer = malloc(_INBUFSIZ * sizeof(int));
     if (!SP->c_buffer)
@@ -301,6 +301,7 @@ WINDOW *Xinitscr(int argc, char **argv)
 
 int endwin(void)
 {
+    SP->in_endwin = TRUE;
     PDC_LOG(("endwin() - called\n"));
 
     /* Allow temporary exit from curses using endwin() */
@@ -311,6 +312,7 @@ int endwin(void)
     assert( SP);
     SP->alive = FALSE;
 
+    SP->in_endwin = FALSE;
     return OK;
 }
 
@@ -343,21 +345,30 @@ SCREEN *set_term(SCREEN *new)
 
 void delscreen(SCREEN *sp)
 {
+    int i = 0;
+    struct _opaque_screen_t *optr;
+
     PDC_LOG(("delscreen() - called\n"));
 
     assert( SP);
     if (!SP || sp != SP)
         return;
 
+    traceoff( );
     free(SP->c_ungch);
     free(SP->c_buffer);
-    free(SP->atrtab);
 
     PDC_slk_free();     /* free the soft label keys, if needed */
 
-    delwin(stdscr);
-    delwin(curscr);
-    delwin(SP->lastscr);
+         /* Mark all windows as 'parentless'.  That way,  we can */
+         /* delete all windows associated with SP.               */
+    optr = SP->opaque;
+    for( i = 0; i < optr->n_windows; i++)
+        optr->window_list[i]->_parent = NULL;
+    while( optr->n_windows)
+        delwin( optr->window_list[0]);
+
+    PDC_free_atrtab( );
     stdscr = (WINDOW *)NULL;
     curscr = (WINDOW *)NULL;
     SP->lastscr = (WINDOW *)NULL;

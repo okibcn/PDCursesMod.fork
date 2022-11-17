@@ -27,7 +27,6 @@ PLATFORM=X64
 osdir      = $(PDCURSES_SRCDIR)\wingui
 common     = $(PDCURSES_SRCDIR)\common
 
-!include $(common)\version.mif
 !include $(common)\libobjs.mif
 
 PDCURSES_WIN_H   = $(osdir)\pdcwin.h
@@ -44,7 +43,7 @@ LINK    = link.exe -nologo
 CFLAGS       = -Z7 -DPDCDEBUG -MT -D_CRT_SECURE_NO_WARNINGS
 LDFLAGS      = -debug -pdb:none
 !else
-CFLAGS       = -Ox -MT -W3 -D_CRT_SECURE_NO_WARNINGS
+CFLAGS       = -Ox -MT -W4 -D_CRT_SECURE_NO_WARNINGS
 LDFLAGS      =
 !endif
 
@@ -135,9 +134,3 @@ tui.obj: $(demodir)\tui.c $(demodir)\tui.h
 
 tuidemo.obj: $(demodir)\tuidemo.c
    $(BUILD) -I$(demodir) $(demodir)\tuidemo.c
-
-PLATFORM1 = Visual C++
-PLATFORM2 = Microsoft Visual C/C++ for Win32
-ARCNAME = pdc$(VER)_vc_w32
-
-!include $(common)\makedist.mif

@@ -1,15 +1,15 @@
 /* PDCurses */
 
+#if defined( PDC_FORCE_UTF8) && !defined( PDC_WIDE)
+   #define PDC_WIDE
+#endif
+
 #include <SDL.h>
 #ifdef PDC_WIDE
 # include <SDL_ttf.h>
 #endif
 
 #include <curspriv.h>
-
-#if defined(_MSC_VER) && !defined(_CRT_SECURE_NO_DEPRECATE)
-# define _CRT_SECURE_NO_DEPRECATE 1   /* kill nonsense warnings */
-#endif
 
 #ifdef PDC_WIDE
 PDCEX  TTF_Font *pdc_ttffont;

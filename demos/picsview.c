@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../demos/snprintf.c"
+
 #define PDC_NCMOUSE
 
 #include "curses.h"
@@ -336,6 +338,9 @@ int main( const int argc, const char *argv[])
                {
                int low_rgb = (pptr ? get_rgb_value( pptr + xloc[i] * 3) : 0);
                int low_idx = find_in_palette( low_rgb, calc_dither( i, j));
+#ifndef __PDCURSES__
+               wchar_t bblock_char = ACS_BBLOCK;
+#endif
 
                if( low_idx != prev_low_idx || idxs[i] != prev_idx)
                   {
@@ -349,7 +354,11 @@ int main( const int argc, const char *argv[])
                   prev_low_idx = low_idx;
                   prev_idx = idxs[i];
                   }
+#ifdef __PDCURSES__
                addch( ACS_BBLOCK);
+#else
+               addnwstr( &bblock_char, 1);
+#endif
                }
             }
          }
@@ -482,8 +491,8 @@ int main( const int argc, const char *argv[])
       }
    free( pixels);
    endwin();
-#ifdef PDCURSES
-   delscreen( SP);
+#ifdef __PDCURSESMOD__      /* Not really needed,  but ensures Valgrind  */
+   delscreen( SP);                       /* says all memory was freed */
 #endif
    return( 0);
 }

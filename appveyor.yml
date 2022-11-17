@@ -215,7 +215,7 @@ environment:
 init:
   - echo BUILD_NUMBER=%APPVEYOR_BUILD_NUMBER%
   # curl defaults --keepalive-time 60 --max-time ?? about 10 minutes --connect-timeout ??
-  - set CURL_ARGS=--location --fail --show-error --keepalive-time 10 --connect-timeout 10 --max-time 60
+  - set CURL_ARGS=--location --fail --show-error --keepalive-time 10 --connect-timeout 10 --max-time 600
   # Setup TOOLCHAIN for Visual Studio build tools, VS2013 as "ancient" test using VC2008 Express
   - if not DEFINED TOOLCHAIN (
       if "%APPVEYOR_BUILD_WORKER_IMAGE%" == "Visual Studio 2013" (
@@ -242,7 +242,7 @@ init:
   - if "%TOOLCHAIN%"=="Watcom19" (
       set "WATCOM_VERSION=Open Watcom 1.9" &&
       set "ARTIFACT_NAME=open-watcom-c-win32-1.9.exe" &&
-      set "ARTIFACT_URL=https://sourceforge.net/projects/openwatcom/files/open-watcom-1.9" &&
+      set "ARTIFACT_URL=https://github.com/open-watcom/open-watcom-1.9/releases/download/ow1.9/" &&
       set "PATH=%WATCOM%\BINNT;%WATCOM%\BINW;%PATH%"
     ) else if "%TOOLCHAIN%"=="Watcom20" (
       set "WATCOM_VERSION=Open Watcom 2.0" &&

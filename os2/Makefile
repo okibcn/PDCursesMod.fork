@@ -19,7 +19,6 @@ endif
 osdir		= $(PDCURSES_SRCDIR)/os2
 common		= $(PDCURSES_SRCDIR)/common
 
-include $(common)/version.mif
 include $(common)/libobjs.mif
 
 PDCURSES_OS2_H	= $(osdir)/pdcos2.h
@@ -70,7 +69,7 @@ else
 	PDCLIBS = $(LIBCURSES)
 	EXEPOST = $(EMXBIND) $* $(BINDFLAGS)
 	TUIPOST = $(EMXBIND) tuidemo $(BINDFLAGS)
-	CLEAN = *.a testcurs ozdemo xmas tuidemo firework ptest rain worm
+	CLEAN = *.a calendar firework mbrot ozdemo ptest rain testcurs tuidemo worm xmas
 endif
 
 .PHONY: all libs clean demos dist
@@ -87,8 +86,8 @@ clean:
 
 demos:	$(DEMOS)
 
-DEMOOBJS = testcurs.o ozdemo.o xmas.o tui.o tuidemo.o firework.o \
-ptest.o rain.o worm.o
+DEMOOBJS = calendar.o firework.o mbrot.o ozdemo.o ptest.o rain.o \
+testcurs.o tui.o tuidemo.o worm.o xmas.o
 
 $(LIBCURSES) : $(LIBDEPS)
 	$(LIBEXE) $(LIBFLAGS) $@ $?
@@ -109,8 +108,8 @@ $(LIBOBJS) : %.o: $(srcdir)/%.c
 $(PDCOBJS) : %.o: $(osdir)/%.c
 	$(CC) -c $(CFLAGS) -o$@ $<
 
-firework.exe ozdemo.exe rain.exe testcurs.exe worm.exe xmas.exe \
-ptest.exe: %.exe: %.o
+calendar.exe firework.exe mbrot.exe ozdemo.exe ptest.exe rain.exe \
+testcurs.exe worm.exe xmas.exe: %.exe: %.o
 	$(LINK) $(LDFLAGS) -o $* $< $(LIBCURSES) $(CCLIBS)
 	$(EXEPOST)
 
@@ -118,7 +117,7 @@ tuidemo.exe:	tuidemo.o tui.o
 	$(LINK) $(LDFLAGS) -o tuidemo tuidemo.o tui.o $(LIBCURSES) $(CCLIBS)
 	$(TUIPOST)
 
-firework.o ozdemo.o ptest.o rain.o testcurs.o worm.o xmas.o: %.o: \
+calendar.o firework.o mbrot.o ozdemo.o ptest.o rain.o testcurs.o worm.o xmas.o: %.o: \
 $(demodir)/%.c
 	$(CC) $(CFLAGS) -o$@ $<
 
@@ -127,9 +126,3 @@ tui.o: $(demodir)\tui.c $(demodir)\tui.h
 
 tuidemo.o: $(demodir)\tuidemo.c
 	$(CC) $(CFLAGS) -I$(demodir) -o $@ $<
-
-PLATFORM1 = EMX OS/2
-PLATFORM2 = EMX 0.9d for OS/2
-ARCNAME = pdc$(VER)_emx_os2
-
-include $(common)/makedist.mif

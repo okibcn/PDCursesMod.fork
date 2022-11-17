@@ -83,8 +83,13 @@ void PDC_gotoyx(int y, int x)
 {
    char tbuff[50];
 
+#ifdef HAVE_SNPRINTF
    snprintf( tbuff, sizeof( tbuff), "\033[%d;%dH", y + 1, x + 1);
+#else
+   sprintf( tbuff, "\033[%d;%dH", y + 1, x + 1);
+#endif
    PDC_puts_to_stdout( tbuff);
+   PDC_doupdate( );
 }
 
 #define RESET_ATTRS   "\033[0m"
@@ -232,7 +237,7 @@ void PDC_transform_line(int lineno, int x, int len, const chtype *srcp)
        chtype changes = *srcp ^ prev_ch;
        size_t bytes_out = 0;
 
-       if( (*srcp & A_ALTCHARSET) && ch < 0x80)
+       if( _is_altcharset( *srcp))
           ch = (int)acs_map[ch & 0x7f];
        if( ch < (int)' ' || (ch >= 0x80 && ch <= 0x9f))
           ch = ' ';
@@ -289,9 +294,9 @@ void PDC_transform_line(int lineno, int x, int len, const chtype *srcp)
        {
            bytes_out = PDC_wc_to_utf8( obuff, (wchar_t)ch);
            while( count < len && !((srcp[0] ^ srcp[count]) & ~A_CHARTEXT)
-                        && (ch = (srcp[count] & A_CHARTEXT)) < MAX_UNICODE)
+                        && (ch = (srcp[count] & A_CHARTEXT)) < (int)MAX_UNICODE)
            {
-               if( (srcp[count] & A_ALTCHARSET) && ch < 0x80)
+               if( _is_altcharset( srcp[count]))
                   ch = (int)acs_map[ch & 0x7f];
                if( ch < (int)' ' || (ch >= 0x80 && ch <= 0x9f))
                   ch = ' ';

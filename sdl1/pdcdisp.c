@@ -47,9 +47,9 @@ static SDL_Color *get_pdc_color( const int color_idx)
     static SDL_Color c;
     const PACKED_RGB rgb = PDC_get_palette_entry( color_idx > 0 ? color_idx : 0);
 
-    c.r = Get_RValue( rgb);
-    c.g = Get_GValue( rgb);
-    c.b = Get_BValue( rgb);
+    c.r = (Uint8)Get_RValue( rgb);
+    c.g = (Uint8)Get_GValue( rgb);
+    c.b = (Uint8)Get_BValue( rgb);
     return( &c);
 }
 
@@ -257,13 +257,13 @@ void PDC_gotoyx(int row, int col)
 #ifdef PDC_WIDE
     SDL_FillRect(pdc_screen, &dest, get_pdc_mapped( backgr));
 
-    if (!(SP->visibility == 2 && (ch & A_ALTCHARSET && !(ch & 0xff80)) &&
+    if (!(SP->visibility == 2 && _is_altcharset( ch) &&
         _grprint(ch & (0x7f | A_ALTCHARSET), dest)))
     {
-        if (ch & A_ALTCHARSET && !(ch & 0xff80))
+        if( _is_altcharset( ch))
             ch = acs_map[ch & 0x7f];
 
-        chstr[0] = ch & A_CHARTEXT;
+        chstr[0] = (Uint16)( ch & A_CHARTEXT);
 
         switch (pdc_sdl_render_mode)
         {
@@ -295,7 +295,7 @@ void PDC_gotoyx(int row, int col)
         }
     }
 #else
-    if (ch & A_ALTCHARSET && !(ch & 0xff80))
+    if( _is_altcharset( ch))
         ch = acs_map[ch & 0x7f];
 
     src.x = (ch & 0xff) % 32 * pdc_fwidth;
@@ -313,9 +313,44 @@ void PDC_gotoyx(int row, int col)
     }
 }
 
+static bool _merge_rects( SDL_Rect *a, const SDL_Rect *b)
+{
+    if( a->x == b->x && a->w == b->w)
+    {
+        const int ay = a->y + a->h;
+        const int by = b->y + b->h;
+
+        if( ay >= b->y && by >= a->y)
+        {
+            const int y1 = min( a->y, b->y);
+            const int y2 = max( ay, by);
+
+            a->y = y1;
+            a->h = y2 - y1;
+            return TRUE;
+        }
+    }
+    if( a->y == b->y && a->h == b->h)
+    {
+        const int ax = a->x + a->w;
+        const int bx = b->x + b->w;
+
+        if( ax >= b->x && bx >= a->x)
+        {
+            const int x1 = min( a->x, b->x);
+            const int x2 = max( ax, bx);
+
+            a->x = x1;
+            a->w = x2 - x1;
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
 void _new_packet(attr_t attr, int lineno, int x, int len, const chtype *srcp)
 {
-    SDL_Rect src, dest, lastrect;
+    SDL_Rect src, dest;
     int j;
 #ifdef PDC_WIDE
     Uint16 chstr[2] = {0, 0};
@@ -338,24 +373,15 @@ void _new_packet(attr_t attr, int lineno, int x, int len, const chtype *srcp)
     dest.x = pdc_fwidth * x + pdc_xoffset;
     dest.h = pdc_fheight;
     dest.w = pdc_fwidth * len;
+    uprect[rectcount++] = dest;
 
-    /* if the previous rect was just above this one, with the same width
-       and horizontal position, then merge the new one with it instead
-       of adding a new entry */
+    /* we try merging the new rectangle with the previous one.  It's
+       possible the result can be merged with the one before that,
+       and so on.  */
 
-    if (rectcount)
-        lastrect = uprect[rectcount - 1];
-
-    if (rectcount && lastrect.x == dest.x && lastrect.w == dest.w)
-    {
-        if (lastrect.y + lastrect.h == dest.y)
-            uprect[rectcount - 1].h = lastrect.h + pdc_fheight;
-        else
-            if (lastrect.y != dest.y)
-                uprect[rectcount++] = dest;
-    }
-    else
-        uprect[rectcount++] = dest;
+    while( rectcount >= 2 && _merge_rects( uprect + rectcount - 2,
+                                           uprect + rectcount - 1))
+       rectcount--;
 
     _set_attr(attr);
 
@@ -367,7 +393,7 @@ void _new_packet(attr_t attr, int lineno, int x, int len, const chtype *srcp)
 #endif
 
     if (hcol == -1)
-        hcol = foregr;
+        hcol = (short)foregr;
 
     for (j = 0; j < len; j++)
     {
@@ -378,7 +404,7 @@ void _new_packet(attr_t attr, int lineno, int x, int len, const chtype *srcp)
 
         dest.w = pdc_fwidth;
 
-        if (ch & A_ALTCHARSET && !(ch & 0xff80))
+        if( _is_altcharset( ch))
         {
 #ifdef PDC_WIDE
             if (_grprint(ch & (0x7f | A_ALTCHARSET), dest))
@@ -397,7 +423,7 @@ void _new_packet(attr_t attr, int lineno, int x, int len, const chtype *srcp)
         {
             if (chstr[0] != ch)
             {
-                chstr[0] = ch;
+                chstr[0] = (Uint16)ch;
 
                 if (pdc_font)
                     SDL_FreeSurface(pdc_font);

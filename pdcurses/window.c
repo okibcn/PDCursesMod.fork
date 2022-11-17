@@ -26,9 +26,6 @@ window
 
     WINDOW *resize_window(WINDOW *win, int nlines, int ncols);
     int wresize(WINDOW *win, int nlines, int ncols);
-    WINDOW *PDC_makelines(WINDOW *win);
-    WINDOW *PDC_makenew(int nlines, int ncols, int begy, int begx);
-    void PDC_sync(WINDOW *win);
 
 ### Description
 
@@ -38,9 +35,8 @@ window
    ncols to COLS - begx. Create a new full-screen window by calling
    newwin(0, 0, 0, 0).
 
-   delwin() deletes the named window, freeing all associated memory. In
-   the case of overlapping windows, subwindows should be deleted before
-   the main window.
+   delwin() deletes the named window, freeing all associated memory.
+   Subwindows must be deleted before the main window can be deleted.
 
    mvwin() moves the window so that the upper left-hand corner is at
    position (y,x). If the move would cause the window to be off the
@@ -85,16 +81,6 @@ window
    window. (However, you still can call it _on_ subwindows.) It returns
    OK or ERR.
 
-   PDC_makenew() allocates all data for a new WINDOW * except the actual
-   lines themselves. If it's unable to allocate memory for the window
-   structure, it will free all allocated memory and return a NULL
-   pointer.
-
-   PDC_makelines() allocates the memory for the lines.
-
-   PDC_sync() handles wrefresh() and wsyncup() calls when a window is
-   changed.
-
 ### Return Value
 
    newwin(), subwin(), derwin() and dupwin() return a pointer to the new
@@ -126,11 +112,23 @@ window
     wsyncdown                   Y       Y       Y
     wresize                     -       Y       Y
     resize_window               -       -       -
-    PDC_makelines               -       -       -
-    PDC_makenew                 -       -       -
-    PDC_sync                    -       -       -
 
 **man-end****************************************************************/
+
+/*library-internals-begin************************************************
+
+   PDC_makenew() allocates all data for a new WINDOW * except the actual
+   lines themselves. If it's unable to allocate memory for the window
+   structure, it will free all allocated memory and return a NULL
+   pointer.
+
+   PDC_makelines() allocates the memory for the lines.
+
+   PDC_sync() handles wrefresh() and wsyncup() calls when a window is
+   changed.
+
+**library-internals-end**************************************************/
+
 
 #include <stdlib.h>
 
@@ -150,19 +148,13 @@ WINDOW *PDC_makenew(int nlines, int ncols, int begy, int begx)
     /* allocate the line pointer array */
 
     win->_y = malloc(nlines * sizeof(chtype *));
-    if (!win->_y)
-    {
-        free(win);
-        return (WINDOW *)NULL;
-    }
 
     /* allocate the minchng and maxchng arrays */
 
     win->_firstch = malloc(nlines * sizeof(int) * 2);
-    if (!win->_firstch)
+    if (!win->_firstch || !win->_y)
     {
-        free(win->_y);
-        free(win);
+        delwin( win);
         return (WINDOW *)NULL;
     }
 
@@ -204,10 +196,7 @@ WINDOW *PDC_makelines(WINDOW *win)
     {
         /* if error, free all the data */
 
-        free(win->_firstch);
-        free(win->_y);
-        free(win);
-
+        delwin( win);
         return (WINDOW *)NULL;
     }
     for (i = 1; i < nlines; i++)
@@ -224,6 +213,24 @@ void PDC_sync(WINDOW *win)
         wrefresh(win);
     if (win->_sync)
         wsyncup(win);
+}
+
+#define is_power_of_two( X)   (!((X) & ((X) - 1)))
+
+static void _resize_window_list( SCREEN *scr_ptr)
+{
+   if( is_power_of_two( scr_ptr->opaque->n_windows))
+      scr_ptr->opaque->window_list =
+                 (WINDOW **)realloc( scr_ptr->opaque->window_list,
+                     scr_ptr->opaque->n_windows * 2 * sizeof( WINDOW *));
+}
+
+void PDC_add_window_to_list( WINDOW *win)
+{
+   SP->opaque->n_windows++;
+   _resize_window_list( SP);
+   assert( SP->opaque->window_list);
+   SP->opaque->window_list[SP->opaque->n_windows - 1] = win;
 }
 
 WINDOW *newwin(int nlines, int ncols, int begy, int begx)
@@ -247,18 +254,43 @@ WINDOW *newwin(int nlines, int ncols, int begy, int begx)
         win = PDC_makelines(win);
 
     if (win)
+    {
         werase(win);
+        PDC_add_window_to_list( win);
+    }
 
     return win;
 }
 
 int delwin(WINDOW *win)
 {
-    PDC_LOG(("delwin() - called\n"));
+    int i;
 
+    PDC_LOG(("delwin() - called\n"));
     assert( win);
     if (!win)
         return ERR;
+
+            /* make sure win has no subwindows */
+    for( i = 0; i < SP->opaque->n_windows; i++)
+    {
+        assert( SP->opaque->window_list[i]->_parent != win);
+        if( SP->opaque->window_list[i]->_parent == win)
+            return( ERR);
+    }
+
+    if( win->_firstch && win->_y && win->_y[0])
+    {
+        i = 0;     /* make sure win is in the window list */
+        while( i < SP->opaque->n_windows && SP->opaque->window_list[i] != win)
+            i++;
+        assert( i < SP->opaque->n_windows);
+        if( i == SP->opaque->n_windows)
+            return( ERR);
+        SP->opaque->n_windows--;        /* remove win from window list */
+        SP->opaque->window_list[i] = SP->opaque->window_list[SP->opaque->n_windows];
+        _resize_window_list( SP);
+    }
 
     /* subwindows use parents' lines */
 
@@ -266,10 +298,11 @@ int delwin(WINDOW *win)
         if (win->_y[0])
            free(win->_y[0]);
 
-    free(win->_firstch);
-    free(win->_y);
+    if( win->_firstch)
+        free(win->_firstch);
+    if( win->_y)
+        free(win->_y);
     free(win);
-
     return OK;
 }
 
@@ -336,6 +369,7 @@ WINDOW *subwin(WINDOW *orig, int nlines, int ncols, int begy, int begx)
         win->_y[i] = orig->_y[j] + k;
 
     win->_flags |= _SUBWIN;
+    PDC_add_window_to_list( win);
 
     return win;
 }
@@ -425,6 +459,7 @@ WINDOW *dupwin(WINDOW *win)
     new->_parent = win->_parent;
     new->_bkgd = win->_bkgd;
     new->_flags = win->_flags;
+    PDC_add_window_to_list( new);
 
     return new;
 }

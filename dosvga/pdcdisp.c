@@ -2,7 +2,11 @@
 
 #include "pdcdos.h"
 
+#ifdef PDC_WIDE
 #define USE_UNICODE_ACS_CHARS 1
+#else
+#define USE_UNICODE_ACS_CHARS 0
+#endif
 
 #include "../common/acs_defs.h"
 
@@ -71,9 +75,10 @@ static void _new_packet(unsigned long colors, int lineno, int x, int len, const 
     /* Compute these just once */
     for (i = 0; i < len; ++i)
     {
-        chtype glyph = srcp[i];
+        const chtype glyph = srcp[i];
         unsigned ch = glyph & A_CHARTEXT;
-        if ((glyph & A_ALTCHARSET) != 0 && (ch & 0xff80) == 0)
+
+        if( _is_altcharset( glyph))
             ch = acs_map[ch];
         glyphs[i].font_addr = PDC_state.font_glyph_data(FALSE, ch);
     }
@@ -394,7 +399,7 @@ static void _transform_line_8(int lineno, int x, int len, const chtype *srcp)
 
         /* Get the index into the font */
         ch = glyph & A_CHARTEXT;
-        if ((glyph & A_ALTCHARSET) != 0 && (glyph & 0xff80) == 0)
+        if( _is_altcharset( glyph))
             ch = acs_map[ch & 0x7f];
 
         /* Get the address of the font data */
@@ -543,7 +548,7 @@ static unsigned long _get_colors(chtype glyph)
 void PDC_private_cursor_off(void)
 {
     /* This gets called before atrtab is set up; avoid a null dereference */
-    if (!SP || !SP->atrtab)
+    if (!SP || !SP->opaque || !SP->opaque->pairs)
         return;
 
     PDC_state.cursor_visible = FALSE;

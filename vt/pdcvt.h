@@ -2,6 +2,10 @@
     will actually work.  Happens in older Windows, DOS, Linux console. */
 extern int PDC_is_ansi;
 
+#if defined( PDC_FORCE_UTF8) && !defined( PDC_WIDE)
+   #define PDC_WIDE
+#endif
+
 #ifdef PDC_WIDE
    #if !defined( UNICODE)
       # define UNICODE
@@ -13,6 +17,10 @@ extern int PDC_is_ansi;
 
 #if defined(_MSC_VER) && !defined(_CRT_SECURE_NO_DEPRECATE)
 # define _CRT_SECURE_NO_DEPRECATE 1   /* kill nonsense warnings */
+#endif
+
+#if !defined( __DMC__)
+# define HAVE_SNPRINTF
 #endif
 
 void PDC_puts_to_stdout( const char *buff);        /* pdcdisp.c */

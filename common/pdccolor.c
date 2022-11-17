@@ -6,13 +6,6 @@ and/or the Plan9 platform,  all of which have full color capability.
 It will presumably never be useful for the DOS or OS/2 platforms.
 See 'pdccolor.txt' for a rationale of how this works. */
 
-#ifdef NO_STDINT_H
-   #define uint64_t unsigned long long
-   #define uint32_t unsigned long
-   #define uint16_t unsigned short
-#else
-   #include <stdint.h>
-#endif
    #include <stdlib.h>
    #include <assert.h>
 
@@ -37,11 +30,16 @@ PACKED_RGB PDC_default_color( int idx)
     assert( idx >= 0);
     if( idx < 16)
     {
-        const int intensity = ((idx & 8) ? 0xff : 0xc0);
+        if( idx == 8)
+            rval = PACK_RGB( 0x80, 0x80, 0x80);
+        else
+        {
+            const int intensity = ((idx & 8) ? 0xff : 0xc0);
 
-        rval = PACK_RGB( ((idx & COLOR_RED) ? intensity : 0),
-                          ((idx & COLOR_GREEN) ? intensity : 0),
-                          ((idx & COLOR_BLUE) ? intensity : 0));
+            rval = PACK_RGB( ((idx & COLOR_RED) ? intensity : 0),
+                             ((idx & COLOR_GREEN) ? intensity : 0),
+                             ((idx & COLOR_BLUE) ? intensity : 0));
+        }
     }
     else if( idx < 216 + 16)
     {                    /* colors 16-231 are a 6x6x6 color cube */
@@ -195,19 +193,22 @@ void PDC_get_rgb_values( const chtype srcp,
         else if( PDC_blink_state)
             reverse_colors ^= 1;
     }
-    if( srcp & A_BOLD & ~SP->termattrs)
+    if( default_foreground)
+        *foreground_rgb = (PACKED_RGB)-1;
+    else if( srcp & A_BOLD & ~SP->termattrs)
         *foreground_rgb = intensified_color( *foreground_rgb);
-    if( intensify_backgnd)
+
+    if( default_background)
+        *background_rgb = (PACKED_RGB)-1;
+    else if( intensify_backgnd)
         *background_rgb = intensified_color( *background_rgb);
     if( srcp & A_DIM)
     {
-        *foreground_rgb = dimmed_color( *foreground_rgb);
-        *background_rgb = dimmed_color( *background_rgb);
+        if( !default_foreground)
+           *foreground_rgb = dimmed_color( *foreground_rgb);
+        if( !default_background)
+           *background_rgb = dimmed_color( *background_rgb);
     }
-    if( default_foreground)
-        *foreground_rgb = (PACKED_RGB)-1;
-    if( default_background)
-        *background_rgb = (PACKED_RGB)-1;
     if( reverse_colors)
     {
         const PACKED_RGB temp = *foreground_rgb;

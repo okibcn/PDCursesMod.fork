@@ -1,4 +1,10 @@
-# Makefile for PDCurses for SDL2
+# GNU MAKE Makefile for PDCurses for SDL2
+#
+# Usage: [g]make [DEBUG=Y] [WIDE=Y] [UTF8=Y] [LIBNAME=(name)]
+#                [DLLNAME=(name)] [target]
+#
+# where target can be any of:
+# [all|demos|libpdcurses.a|testcurs]...
 
 O = o
 
@@ -64,18 +70,25 @@ endif
 
 ifeq ($(UTF8),Y)
 	CFLAGS += -DPDC_FORCE_UTF8
+	ifneq ($(WIDE),Y)
+		SFLAGS += $(TFLAGS)
+		SLIBS  += $(TLIBS)
+	endif
 endif
 
 ifdef CHTYPE_32
 	CFLAGS += -DCHTYPE_32
 endif
 
+LIBNAME=pdcurses
+DLLNAME=pdcurses
+
 ifeq ($(DLL),Y)
 	ifeq ($(OS),Windows_NT)
 		CFLAGS += -DPDC_DLL_BUILD
 		LIBEXE = $(CC)
-		LIBFLAGS = -Wl,--out-implib,libpdcurses.a -shared -o
-		LIBCURSES = pdcurses.dll
+		LIBFLAGS = -Wl,--out-implib,lib$(LIBNAME).a -shared -o
+		LIBCURSES = $(DLLNAME).dll
 		CLEAN = $(LIBCURSES) *.a
 		RESOURCE = pdcurses.o
 		LIBLIBS = $(SLIBS)
@@ -88,7 +101,7 @@ ifeq ($(DLL),Y)
 		endif
 		LIBEXE = $(CC)
 		LIBFLAGS = -shared -o
-		LIBCURSES = libpdcurses$(DLL_SUFFIX)
+		LIBCURSES = lib$(DLLNAME)$(DLL_SUFFIX)
 		LIBLIBS = $(SLIBS)
 		LDFLAGS = $(LIBCURSES)
 		CLEAN = *$(DLL_SUFFIX)
@@ -96,7 +109,7 @@ ifeq ($(DLL),Y)
 else
 	LIBEXE = $(AR)
 	LIBFLAGS = rcv
-	LIBCURSES = libpdcurses.a
+	LIBCURSES = lib$(LIBNAME).a
 	LDFLAGS = $(LIBCURSES) $(SLIBS)
 	CLEAN = *.a
 endif
@@ -123,13 +136,13 @@ endif
 
 install:
 ifneq ($(OS),Windows_NT)
-	cp libpdcurses.so /usr/local/lib
+	cp lib$(DLLNAME).so /usr/local/lib
 	ldconfig /usr/local/lib
 endif
 
 uninstall:
 ifneq ($(OS),Windows_NT)
-	$(RM) /usr/local/lib/libpdcurses.so
+	$(RM) /usr/local/lib/lib$(DLLNAME).so
 	ldconfig /usr/local/lib
 endif
 
@@ -151,10 +164,16 @@ $(LIBOBJS) : %.o: $(srcdir)/%.c
 $(PDCOBJS) : %.o: $(osdir)/%.c
 	$(BUILD) $(SFLAGS) -c $<
 
+calendar$(E): $(demodir)/calendar.c
+	$(BUILD) $(DEMOFLAGS) -o $@ $< $(LDFLAGS)
+
 firework$(E): $(demodir)/firework.c
 	$(BUILD) $(DEMOFLAGS) -o $@ $< $(LDFLAGS)
 
 init_col$(E): $(demodir)/init_col.c
+	$(BUILD) $(DEMOFLAGS) -o $@ $< $(LDFLAGS)
+
+mbrot$(E): $(demodir)/mbrot.c
 	$(BUILD) $(DEMOFLAGS) -o $@ $< $(LDFLAGS)
 
 ozdemo$(E): $(demodir)/ozdemo.c

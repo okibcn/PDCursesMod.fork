@@ -1,6 +1,7 @@
 # GNU MAKE Makefile for PDCurses library - WIN32 MinGW GCC WinGUI
 #
-# Usage: [g]make [-f path\Makefile] [DEBUG=Y] [DLL=Y] [WIDE=Y] [UTF8=Y] [target]
+# Usage: [g]make [-f path\Makefile] [DEBUG=Y] [DLL=Y] [WIDE=Y] [UTF8=Y]
+#        [LIBNAME=(name)] [DLLNAME=(name)] [target]
 #
 # where target can be any of:
 # [all|demos|pdcurses.a|testcurs.exe...]
@@ -15,7 +16,6 @@ endif
 osdir		= $(PDCURSES_SRCDIR)/wingui
 common		= $(PDCURSES_SRCDIR)/common
 
-include $(common)/version.mif
 include $(common)/libobjs.mif
 
 uname_S := $(shell uname -s 2>/dev/null)
@@ -85,7 +85,7 @@ ifdef CHTYPE_32
 endif
 
 ifeq ($(UTF8),Y)
-	CFLAGS	+= -DPDC_WIDE -DPDC_FORCE_UTF8
+	CFLAGS	+= -DPDC_FORCE_UTF8
 else
 	ifeq ($(WIDE),Y)
 		CFLAGS	+= -DPDC_WIDE
@@ -93,12 +93,14 @@ else
 endif
 
 LINK	   = $(CC)
+LIBNAME = pdcurses
+DLLNAME = pdcurses
 
 ifeq ($(DLL),Y)
 	CFLAGS += -DPDC_DLL_BUILD
 	LIBEXE = $(CC)
-	LIBFLAGS = -Wl,--out-implib,pdcurses.a -static-libgcc -shared -o
-	LIBCURSES = pdcurses.dll
+	LIBFLAGS = -Wl,--out-implib,$(LIBNAME).a -static-libgcc -shared -o
+	LIBCURSES = $(DLLNAME).dll
 	LIBDEPS = $(LIBOBJS) $(PDCOBJS)
 	LIBSADDED = -lgdi32 -lcomdlg32 -lwinmm
 	EXELIBS =
@@ -110,7 +112,7 @@ ifeq ($(PREFIX),)
 else
 	LIBFLAGS = rv
 endif
-	LIBCURSES = pdcurses.a
+	LIBCURSES = $(LIBNAME).a
 	LIBDEPS = $(LIBOBJS) $(PDCOBJS)
 	LIBSADDED =
 	EXELIBS = -lgdi32 -lcomdlg32 -lwinmm
@@ -136,7 +138,7 @@ endif
 
 $(LIBCURSES) : $(LIBDEPS)
 	$(LIBEXE) $(LIBFLAGS) $@ $? $(LIBSADDED)
-	$(CP) pdcurses.a panel.a
+	$(CP) $(LIBNAME).a panel.a
 
 $(LIBOBJS) $(PDCOBJS) : $(PDCURSES_HEADERS)
 $(PDCOBJS) : $(PDCURSES_WIN_H)
@@ -149,7 +151,8 @@ $(LIBOBJS) : %.o: $(srcdir)/%.c
 $(PDCOBJS) : %.o: $(osdir)/%.c
 	$(CC) -c $(CFLAGS) $<
 
-firework.exe init_col.exe newtest.exe ozdemo.exe picsview.exe \
+calendar.exe firework.exe init_col.exe mbrot.exe \
+newtest.exe ozdemo.exe picsview.exe \
 ptest.exe rain.exe speed.exe testcurs.exe test_pan.exe \
 version.exe widetest.exe worm.exe xmas.exe: %.exe: $(demodir)/%.c
 	$(CC) $(CFLAGS) -mwindows -o$@ $< $(LIBCURSES) $(EXELIBS)
@@ -163,10 +166,4 @@ tui.o: $(demodir)/tui.c $(demodir)/tui.h $(PDCURSES_CURSES_H)
 tuidemo.o: $(demodir)/tuidemo.c $(PDCURSES_CURSES_H)
 	$(CC) -c $(CFLAGS) -I$(demodir) -o$@ $<
 
-PLATFORM1 = MinGW Win32
-PLATFORM2 = MinGW for Win32
-ARCNAME = pdc$(VER)_ming_w32
-BUILD		= $(CC) $(CFLAGS) -I$(PDCURSES_SRCDIR) -mwindows $(LIBCURSES)
-
-include $(common)/makedist.mif
 include $(PDCURSES_SRCDIR)/demos/nctests.mif

@@ -14,7 +14,7 @@ Define before inclusion (only those needed):
     PDC_RGB         if you want to use RGB color definitions
                     (Red = 1, Green = 2, Blue = 4) instead of BGR
     PDC_WIDE        if building / built with wide-character support
-    PDC_FORCE_UTF8  if forcing use of UTF8
+    PDC_FORCE_UTF8  if forcing use of UTF8 (implies PDC_WIDE)
     PDC_DLL_BUILD   if building / built as a Windows DLL
     PDC_NCMOUSE     to use the ncurses mouse API instead
                     of PDCurses' traditional mouse API
@@ -35,12 +35,14 @@ Defined by this header:
 
 #define PDCURSES        1
 #define PDC_BUILD (PDC_VER_MAJOR*1000 + PDC_VER_MINOR *100 + PDC_VER_CHANGE)
+         /* NOTE : For version changes that are not backward compatible, */
+         /* the 'endwin_*' #defines below should be updated.             */
 #define PDC_VER_MAJOR    4
 #define PDC_VER_MINOR    3
-#define PDC_VER_CHANGE   1
-#define PDC_VER_YEAR   2021
-#define PDC_VER_MONTH    12
-#define PDC_VER_DAY      21
+#define PDC_VER_CHANGE   4
+#define PDC_VER_YEAR   2022
+#define PDC_VER_MONTH    11
+#define PDC_VER_DAY      04
 
 #define PDC_STRINGIZE( x) #x
 #define PDC_stringize( x) PDC_STRINGIZE( x)
@@ -67,6 +69,10 @@ Defined by this header:
 #include <stddef.h>
 #include <stdio.h>
 
+#if defined( PDC_FORCE_UTF8) && !defined( PDC_WIDE)
+   #define PDC_WIDE
+#endif
+
 #ifdef PDC_WIDE
 # include <wchar.h>
 #endif
@@ -87,8 +93,13 @@ extern "C"
    #define uint64_t unsigned __int64
    #define uint32_t unsigned long
    #define uint16_t unsigned short
+   #define int32_t  long
+   #define int16_t  short
 #else
    #include <stdint.h>
+   #ifdef __DMC__
+      #define uint64_t unsigned long long
+   #endif
 #endif
 
 /*----------------------------------------------------------------------
@@ -341,6 +352,11 @@ typedef struct
  *
  */
 
+/* Avoid using the WINDOW or SCREEN structs directly -- doing so
+   makes your code PDCurses*-only and may result in future binary
+   incompatibility;  use the corresponding functions if possible.
+   These structs may eventually be made private. */
+
 typedef struct _win       /* definition of a window */
 {
     int   _cury;          /* current pseudo-cursor */
@@ -372,8 +388,7 @@ typedef struct _win       /* definition of a window */
     int   _smincol, _smaxcol;    /* saved position used only for pads */
 } WINDOW;
 
-/* Avoid using the SCREEN struct directly -- use the corresponding
-   functions if possible. This struct may eventually be made private. */
+/* See above warning against directly accessing SCREEN elements. */
 
 typedef struct
 {
@@ -414,8 +429,8 @@ typedef struct
                                       on last key press */
     bool  return_key_modifiers;    /* TRUE if modifier keys are
                                       returned as "real" keys */
-    bool  unused_key_code;         /* (was) TRUE if last key is a special key;
-                                      used internally by get_wch() */
+    bool  in_endwin;               /* if we're in endwin(),  we should use
+                                      only signal-safe code */
     MOUSE_STATUS mouse_status;     /* last returned mouse status */
     short line_color;     /* color of line attributes - default -1 */
     attr_t termattrs;     /* attribute capabilities */
@@ -431,7 +446,7 @@ typedef struct
     int  *c_ungch;        /* array of ungotten chars */
     int   c_ungind;       /* ungetch() push index */
     int   c_ungmax;       /* allocated size of ungetch() buffer */
-    void *atrtab;         /* table of color pairs */
+    struct _opaque_screen_t *opaque;    /* internal library variables */
 } SCREEN;
 
 /*----------------------------------------------------------------------
@@ -503,14 +518,15 @@ Default, 64-bit chtype,  both wide- and 8-bit character builds:
 All attribute modifier schemes include eight "basic" bits:  bold, underline,
 right-line, left-line, italic, reverse and blink attributes,  plus the
 alternate character set indicator. For default and 32-bit narrow builds,
-three more bits are used for underlined, dimmed, and strikeout attributes;
+three more bits are used for overlined, dimmed, and strikeout attributes;
 a fourth bit is reserved.
 
 Default chtypes have enough character bits to support the full range of
 Unicode,  all attributes,  and 2^20 = 1048576 color pairs.  Note,  though,
-that as of 2021 Dec 21,  only WinGUI,  VT,  X11, and SDLn have COLOR_PAIRS
-= 1048576.  Other platforms (DOSVGA,  Plan9, WinCon) may join them.  Some
-(DOS,  OS/2) simply do not have full-color capability.
+that as of 2022 Jun 17,  only WinGUI,  VT,  X11,  Linux framebuffer,  and
+SDLn have COLOR_PAIRS = 1048576.  Other platforms (DOSVGA,  Plan9, WinCon)
+may join them.  Some (DOS,  OS/2) simply do not have full-color
+capability.
 
 **man-end****************************************************************/
 
@@ -563,7 +579,7 @@ that as of 2021 Dec 21,  only WinGUI,  VT,  X11, and SDLn have COLOR_PAIRS
 #endif
 
 #define A_ITALIC      A_INVIS
-#define A_PROTECT    (A_UNDERLINE | A_LEFT | A_RIGHT)
+#define A_PROTECT    (A_UNDERLINE | A_LEFT | A_RIGHT | A_OVERLINE)
 #define A_STANDOUT    (A_REVERSE | A_BOLD) /* X/Open */
 
 #define A_HORIZONTAL  A_NORMAL
@@ -1299,6 +1315,29 @@ PDCEX  int     doupdate(void);
 PDCEX  WINDOW *dupwin(WINDOW *);
 PDCEX  int     echochar(const chtype);
 PDCEX  int     echo(void);
+
+#ifdef PDC_WIDE
+   #ifdef PDC_FORCE_UTF8
+      #ifdef CHTYPE_32
+         #define endwin endwin_u32_4302
+      #else
+         #define endwin endwin_u64_4302
+      #endif
+   #else
+      #ifdef CHTYPE_32
+         #define endwin endwin_w32_4302
+      #else
+         #define endwin endwin_w64_4302
+      #endif
+   #endif
+#else       /* 8-bit chtypes */
+   #ifdef CHTYPE_32
+      #define endwin endwin_x32_4302
+   #else
+      #define endwin endwin_x64_4302
+   #endif
+#endif
+
 PDCEX  int     endwin(void);
 PDCEX  char    erasechar(void);
 PDCEX  int     erase(void);
@@ -1326,29 +1365,6 @@ PDCEX  int     init_color(short, short, short, short);
 PDCEX  int     init_extended_color(int, int, int, int);
 PDCEX  int     init_extended_pair(int, int, int);
 PDCEX  int     init_pair(short, short, short);
-
-#ifdef PDC_WIDE
-   #ifdef PDC_FORCE_UTF8
-      #ifdef CHTYPE_32
-         #define initscr initscr_u32_4301
-      #else
-         #define initscr initscr_u64_4301
-      #endif
-   #else
-      #ifdef CHTYPE_32
-         #define initscr initscr_w32_4301
-      #else
-         #define initscr initscr_w64_4301
-      #endif
-   #endif
-#else       /* 8-bit chtypes */
-   #ifdef CHTYPE_32
-      #define initscr initscr_x32_4301a
-   #else
-      #define initscr initscr_x64_4301a
-   #endif
-#endif
-
 PDCEX  WINDOW *initscr(void);
 PDCEX  int     innstr(char *, int);
 PDCEX  int     insch(chtype);
@@ -1461,6 +1477,7 @@ PDCEX  int     slk_attr_on(const attr_t, void *);
 PDCEX  int     slk_attrset(const chtype);
 PDCEX  int     slk_attr_set(const attr_t, short, void *);
 PDCEX  int     slk_clear(void);
+PDCEX  int     extended_slk_color(int);
 PDCEX  int     slk_color(short);
 PDCEX  int     slk_init(int);
 PDCEX  char   *slk_label(int);
@@ -1732,6 +1749,8 @@ PDCEX  char    wordchar(void);
 PDCEX  wchar_t *slk_wlabel(int);
 #endif
 
+PDCEX  bool    PDC_getcbreak(void);
+PDCEX  bool    PDC_getecho(void);
 PDCEX  void    PDC_debug(const char *, ...);
 PDCEX  void    _tracef(const char *, ...);
 PDCEX  void    PDC_get_version(PDC_VERSION *);
@@ -1760,10 +1779,14 @@ PDCEX  void    PDC_set_resize_limits( const int new_min_lines,
 #define FUNCTION_KEY_SHRINK_FONT      3
 #define FUNCTION_KEY_CHOOSE_FONT      4
 #define FUNCTION_KEY_ABORT            5
-#define PDC_MAX_FUNCTION_KEYS         6
+#define FUNCTION_KEY_COPY             6
+#define PDC_MAX_FUNCTION_KEYS         7
 
 PDCEX int     PDC_set_function_key( const unsigned function,
                               const int new_key);
+PDCEX int     PDC_get_function_key( const unsigned function);
+
+PDCEX void    PDC_set_window_resized_callback(void (*callback)());
 
 PDCEX  WINDOW *Xinitscr(int, char **);
 #ifdef XCURSES

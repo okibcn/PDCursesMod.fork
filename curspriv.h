@@ -4,6 +4,10 @@
 #ifndef __CURSES_INTERNALS__
 #define __CURSES_INTERNALS__ 1
 
+#if defined(_MSC_VER) && !defined(_CRT_SECURE_NO_DEPRECATE)
+# define _CRT_SECURE_NO_DEPRECATE 1   /* kill nonsense warnings */
+#endif
+
 #define CURSES_LIBRARY
 #include <curses.h>
 
@@ -18,6 +22,10 @@
 # if !defined( HAVE_VSNPRINTF) && !defined( __DMC__)
 #  define HAVE_VSNPRINTF     /* have vsnprintf() */
 # endif
+#endif
+
+#if defined( PDC_FORCE_UTF8) && !defined( PDC_WIDE)
+   #define PDC_WIDE
 #endif
 
 /*----------------------------------------------------------------------*/
@@ -81,6 +89,7 @@ const char *PDC_sysname(void);
 /* Internal cross-module functions */
 
 int     PDC_init_atrtab(void);
+void    PDC_free_atrtab(void);
 WINDOW *PDC_makelines(WINDOW *);
 WINDOW *PDC_makenew(int, int, int, int);
 int     PDC_mouse_in_slk(int, int);
@@ -97,6 +106,7 @@ void    PDC_mark_cell_as_changed( WINDOW *, const int y, const int x);
 int     PDC_mbtowc(wchar_t *, const char *, size_t);
 size_t  PDC_mbstowcs(wchar_t *, const char *, size_t);
 size_t  PDC_wcstombs(char *, const wchar_t *, size_t);
+PDCEX int PDC_wcwidth( const int32_t ucs);
 #endif
 
 #ifdef PDCDEBUG
@@ -118,12 +128,33 @@ size_t  PDC_wcstombs(char *, const wchar_t *, size_t);
 
 #define PDC_CLICK_PERIOD 150  /* time to wait for a click, if
                                  not set by mouseinterval() */
-#define PDC_COLOR_PAIRS  256
 #define PDC_MAXCOL       768  /* maximum possible COLORS; may be less */
 
 #define _INBUFSIZ        512  /* size of terminal input buffer */
 #define NUNGETCH         256  /* max # chars to ungetch() */
 
 #define INTENTIONALLY_UNUSED_PARAMETER( param) (void)(param)
+
+#define _is_altcharset( ch)  (((ch) & (A_ALTCHARSET | (A_CHARTEXT ^ 0x7f))) == A_ALTCHARSET)
+
+#if PDC_COLOR_BITS < 15
+    typedef int16_t hash_idx_t;
+#else
+    typedef int32_t hash_idx_t;
+#endif
+
+struct _opaque_screen_t
+{
+   struct _pdc_pair *pairs;
+   int pairs_allocated;
+   int first_col;
+   bool default_colors;
+   hash_idx_t *pair_hash_tbl;
+   int pair_hash_tbl_size, pair_hash_tbl_used;
+   int n_windows;
+   WINDOW **window_list;
+   unsigned trace_flags;
+   bool want_trace_fflush;
+};
 
 #endif /* __CURSES_INTERNALS__ */

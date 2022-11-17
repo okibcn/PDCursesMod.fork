@@ -170,6 +170,23 @@ static int _process_key_event(void)
     if (!key)
     {
         key = event.key.keysym.unicode;
+#if defined(__OS2__)
+        if ( key == 0 && (event.key.keysym.mod & KMOD_CTRL || event.key.keysym.mod & KMOD_ALT) )
+        {
+            const int idx = event.key.keysym.scancode;
+            const int scancode_to_letter_length = 51;
+            static const char *scancode_to_letter =
+                   "                qwertyuiop    asdfghjkl     zxcvbnm";
+
+            if( idx >= 0 && idx < scancode_to_letter_length)
+                if( scancode_to_letter[idx] != ' ')
+                {
+                    key = scancode_to_letter[idx] - 'a' + 1;
+                    if ( event.key.keysym.mod & KMOD_ALT )
+                        key = key + 96;  /* for alt set to lower case alphabetic */
+                }
+        }
+#endif
 
         if (key > 0x7f)
             key = 0;
@@ -214,6 +231,8 @@ static int _process_mouse_event(void)
 
     SP->mouse_status.x = (event.motion.x - pdc_xoffset) / pdc_fwidth;
     SP->mouse_status.y = (event.motion.y - pdc_yoffset) / pdc_fheight;
+    if( SP->mouse_status.x >= COLS || SP->mouse_status.y >= LINES)
+        return -1;
 
     if (event.type == SDL_MOUSEMOTION)
     {

@@ -1,5 +1,17 @@
 /* PDCurses */
 
+#if defined(_MSC_VER) && !defined(_CRT_SECURE_NO_DEPRECATE)
+# define _CRT_SECURE_NO_DEPRECATE 1   /* kill nonsense warnings */
+#endif
+
+#if defined(_MSC_VER) && !defined(_CRT_SECURE_NO_DEPRECATE)
+# define _CRT_SECURE_NO_DEPRECATE 1   /* kill nonsense warnings */
+#endif
+
+#if defined( PDC_FORCE_UTF8)
+   #define PDC_WIDE
+#endif
+
 #if defined(PDC_WIDE) && !defined(UNICODE)
 # define UNICODE
 #endif
@@ -8,10 +20,6 @@
 #include <windows.h>
 #undef MOUSE_MOVED
 #include <curspriv.h>
-
-#if defined(_MSC_VER) && !defined(_CRT_SECURE_NO_DEPRECATE)
-# define _CRT_SECURE_NO_DEPRECATE 1   /* kill nonsense warnings */
-#endif
 
 typedef struct {short r, g, b; bool mapped;} PDCCOLOR;
 
